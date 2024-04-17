@@ -8,15 +8,21 @@ done
 
 mkdir -p output/genome_aln
 for f in $(ls output/reads_filtered/*.fastq.gz); do
-    bowtie2 -p 2 -q --local \
+    bowtie2 \
+	-p 4 --no-mixed --no-discordant --very-sensitive \
         -x output/index/S228C \
         -U $f \
         -S output/genome_aln/$(basename $f .fastq.gz).sam
+
     samtools view -h -S -b \
         -o output/genome_aln/$(basename $f .fastq.gz).bam \
         output/genome_aln/$(basename $f .fastq.gz).sam
-    samtools sort -o output/genome_aln/$(basename $f .fastq.gz).sorted.bam \
-        output/genome_aln/$(basename $f .fastq.gz).bam
-    samtools index output/genome_aln/$(basename $f .fastq.gz).sorted.bam
+
     rm output/genome_aln/$(basename $f .fastq.gz).sam
 done
+
+    ## for igv visualization
+    # samtools sort -o output/genome_aln/$(basename $f .fastq.gz).sorted.bam \
+    #     output/genome_aln/$(basename $f .fastq.gz).bam
+    # samtools index output/genome_aln/$(basename $f .fastq.gz).sorted.bam
+
