@@ -5,4 +5,5 @@ macs2 callpeak \
     -n macs2.out \
     --outdir output/peaks \
     -g 12359296 \
-    --nomodel
+    --nomodel \
+    --extsize 300
