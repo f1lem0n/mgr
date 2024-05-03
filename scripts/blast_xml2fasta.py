@@ -18,25 +18,21 @@ def find_hits(tree):
 
 
 def write_fasta(ids, seqs, outfile):
-    with open(f"output/blastn/{outfile}.fasta", "w") as f:
+    with open(f"{outfile}.fasta", "w") as f:
         for i, s in zip(ids, seqs):
             f.write(f">{i}\n{s}\n")
 
 
 def main():
-    for path in pathlib.Path("output/blastn").iterdir():
-        if path.suffix != ".xml":
-            continue
-        try:
-            tree = ET.parse(path)
-            qid, qseq = find_query(tree)
-            hids, hseqs = find_hits(tree)
-            ids = [qid] + hids
-            seqs = [qseq] + hseqs
-            write_fasta(ids, seqs, outfile=path.stem)
-        except AttributeError:
-            print(f"[{path.stem}] No hits found.")
-            continue
+    try:
+        tree = ET.parse("blast_results.xml")
+        qid, qseq = find_query(tree)
+        hids, hseqs = find_hits(tree)
+        ids = [qid] + hids
+        seqs = [qseq] + hseqs
+        write_fasta(ids, seqs, outfile="homologs.fasta")
+    except AttributeError:
+        print(f"[!] No hits found. Skipping...")
 
 
 if __name__ == "__main__":
