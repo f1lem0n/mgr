@@ -5,80 +5,39 @@ root=$(pwd)
 for gene in $(ls output/); do
     echo "processing [ $gene ]"
     cd output/$gene
-    mkdir -p invivo insilico consensus
+    mkdir -p invivo insilico consensus CT
 
     cd insilico
-    echo "generating in silico structure..."
+    echo "Generating in silico structure..."
     RNAfold --noLP -p -d2 -i ../seq.fasta > MFEs.txt
+    b2ct < MFEs.txt > ../CT/insilico.ct
     gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=ss.png *_ss.ps > /dev/null
     gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=dp.png *_dp.ps > /dev/null
 
     cd ../invivo
-    echo "generating in vivo structure..."
+    echo "Generating in vivo structure..."
     RNAfold --noLP -p -d2 -C -i ../constrained.fasta > MFEs.txt
+    b2ct < MFEs.txt > ../CT/invivo.ct
     gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=ss.png *_ss.ps > /dev/null
     gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=dp.png *_dp.ps > /dev/null
 
-    cd ../consensus
-    echo "finding homologs for consensus structure..."
-    blastn \
-        -query ../seq.fasta \
-        -db $BLAST_DB \
-        -outfmt 5 \
-        -evalue 1e-30 \
-        -word_size 6 \
-        -max_target_seqs 5 \
-        -out blast_results.xml
-    python ../../../scripts/blast_xml2fasta.py
-    if [ ! -f homologs.fasta ]; then
+    cd ..
+    if [ ! -f seqdump.txt ]; then
+        echo "No homologs found! Skipping..."
         cd $root
         continue
     fi
     echo "aligning homologs..."
     clustalw \
-        -INFILE="homologs.fasta" \
+        -INFILE="seqdump.txt" \
         -OUTFILE="homologs.aln"
-    echo "generating consensus structure..."
-    RNAalifold --noLP -p -d2 < homologs.aln > MFEs.txt
+    echo "Generating consensus structure..."
+    cd consensus
+    RNAalifold --noLP -p -d2 < ../homologs.aln > MFEs.txt
+    b2ct < MFEs.txt > ../CT/consensus.ct
+    gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alidot.png alidot.ps > /dev/null
+    gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alirna.png alirna.ps > /dev/null
     cd $root
 done
 
 exit 0
-
-
-
-
-
-
-mkdir -p output/structures_0
-for f in $(ls output/sequences/*.fasta); do
-    RNAfold < $f > output/structures_0/$(basename $f .fasta).out
-done
-mv *_ss.ps output/structures_0/.
-
-mkdir -p output/blastn
-for f in $(ls output/sequences/*.fasta); do
-    blastn \
-        -query $f \
-        -db refseq_select_rna \
-        -outfmt 5 \
-        -evalue 1e-30 \
-        -word_size 6 \
-        -max_target_seqs 5 \
-        -out output/blastn/$(basename $f .fasta).xml
-done
-
-python scripts/blast_xml2fasta.py
-
-mkdir -p output/alignments
-for f in $(ls output/blastn/*.fasta); do
-    clustalw \
-        -INFILE=$f \
-        -OUTFILE="output/alignments/$(basename $f .fasta).aln"
-done
-
-mkdir -p output/structures_consensus
-for f in $(ls output/alignments/*.aln); do
-    RNAalifold < $f > output/structures_consensus/$(basename $f .fasta).out
-done
-mv *.ps output/structures_consensus/.
