@@ -5,7 +5,7 @@ library(reshape2)
 library(tidyverse)
 library(dplyr)
 
-genes <- c("ASH1", "SEN34")
+genes <- list.dirs("output", full.names = FALSE, recursive = FALSE)
 
 invivo_vs_insilico <- c()
 invivo_vs_consensus <- c()
@@ -14,12 +14,12 @@ for (gene in genes) {
   insilico <- loadCt(paste0("output/", gene, "/CT/insilico.ct"))
   invivo <- loadCt(paste0("output/", gene, "/CT/invivo.ct"))
   consensus <- loadCt(paste0("output/", gene, "/CT/consensus.ct"))
-  subStrList <- list(
+  substructures <- list(
     insilico = getSubStr(insilico),
     invivo = getSubStr(invivo),
     consensus = getSubStr(consensus)
   )
-  score_matrix <- getCompare(subStrList)
+  score_matrix <- getCompare(substructures)
   invivo_vs_insilico <- append(invivo_vs_insilico, score_matrix[2, 1])
   invivo_vs_consensus <- append(invivo_vs_consensus, score_matrix[2, 3])
   labs <- c("in silico", "in vivo", "consensus")

@@ -1,4 +1,4 @@
-BLAST_DB="refseq_select_rna"
+BLAST_DB="nr"
 
 root=$(pwd)
 
@@ -22,17 +22,29 @@ for gene in $(ls output/); do
     gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=dp.png *_dp.ps > /dev/null
 
     cd ..
-    if [ ! -f seqdump.txt ]; then
+    echo "Searching for homologs..."
+    blastn \
+        -db $BLAST_DB \
+        -query seq.fasta \
+        -out blastn.xml \
+        -outfmt "5" \
+        -max_target_seqs 500 \
+        -remote
+    python $root/scripts/blast_xml2fasta.py blastn.xml > seqdump.fasta
+    if [ ! -s seqdump.fasta ]; then
         echo "No homologs found! Skipping..."
         cd $root
+        rm -rf output/$gene
         continue
     fi
-    echo "aligning homologs..."
+
+    echo "Aligning homologs..."
     clustalw \
-        -INFILE="seqdump.txt" \
+        -INFILE="seqdump.fasta" \
         -OUTFILE="homologs.aln"
-    echo "Generating consensus structure..."
+
     cd consensus
+    echo "Generating consensus structure..."
     RNAalifold --noLP -p -d2 < ../homologs.aln > MFEs.txt
     b2ct < MFEs.txt > ../CT/consensus.ct
     gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alidot.png alidot.ps > /dev/null

@@ -1,4 +1,4 @@
-import pathlib
+from sys import argv
 import xml.etree.ElementTree as ET
 
 
@@ -11,28 +11,38 @@ def find_query(tree):
 def find_hits(tree):
     hids = tree.findall(".//Hit_def")
     hseqs = tree.findall(".//Hsp_hseq")
+    hdefs = tree.findall(".//Hit_def")
     return (
         [hid.text for hid in hids],
         [hseq.text.replace("-", "") for hseq in hseqs],
+        [hdef.text for hdef in hdefs]
     )
 
 
-def write_fasta(ids, seqs, outfile):
-    with open(f"{outfile}.fasta", "w") as f:
-        for i, s in zip(ids, seqs):
-            f.write(f">{i}\n{s}\n")
+def filter_hits(ids, seqs, defs, num_hits=10):
+    n = 0
+    fasta = ""
+    for i, s, d in zip(ids, seqs, defs):
+        if n == num_hits:
+            break
+        if "query" not in d and "Saccharomyces cerevisiae" not in d:
+            fasta += f">seq{n}\n{s}\n"
+            n += 1
+    return fasta
 
 
 def main():
     try:
-        tree = ET.parse("blast_results.xml")
+        tree = ET.parse(str(argv[1]))
         qid, qseq = find_query(tree)
-        hids, hseqs = find_hits(tree)
+        hids, hseqs, hdefs = find_hits(tree)
         ids = [qid] + hids
         seqs = [qseq] + hseqs
-        write_fasta(ids, seqs, outfile="homologs.fasta")
-    except AttributeError:
-        print(f"[!] No hits found. Skipping...")
+        defs = ["query"] + hdefs
+        fasta = filter_hits(ids, seqs, defs)
+        print(fasta)
+    except ET.ParseError:
+        pass
 
 
 if __name__ == "__main__":
