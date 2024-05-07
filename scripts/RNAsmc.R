@@ -88,12 +88,17 @@ df <- df %>%
   mutate(type = ifelse(type == "VS", "in silico", "consensus"))
 plot <- df %>%
   ggplot(aes(x = type, y = value)) +
-  geom_boxplot() +
-  theme_minimal() +
+  geom_boxplot(staplewidth = 0.1, lwd = 1) +
+  geom_dotplot(
+    binaxis = "y", stackdir = "center", dotsize = 0.5,
+    alpha = 0.5, col = NA, fill = "red"
+  ) +
+  theme_classic() +
   theme(
     title = element_text(size = 16),
     axis.title = element_blank(),
-    axis.ticks = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
     panel.grid = element_blank(),
     axis.text = element_text(size = 14),
     plot.background = element_rect(fill = "white")
