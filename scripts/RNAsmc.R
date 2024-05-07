@@ -6,6 +6,7 @@ library(tidyverse)
 library(dplyr)
 
 genes <- list.dirs("output", full.names = FALSE, recursive = FALSE)
+genes
 
 invivo_vs_insilico <- c()
 invivo_vs_consensus <- c()
@@ -33,7 +34,10 @@ for (gene in genes) {
       color = "black",
       lwd = 0.5, linetype = 1
     ) +
-    scale_fill_gradient(low = "white", high = "red") +
+    scale_fill_gradient(
+      low = "white", high = "red",
+      limits = c(0, 10)
+    ) +
     geom_text(
       aes(label = round(value, digits = 2)),
       color = "black", size = 4
@@ -48,8 +52,8 @@ for (gene in genes) {
       )
     ) +
     coord_fixed() +
-    theme_minimal() +
     ggtitle(paste0("RNA structure similarity of ", gene)) +
+    theme_minimal() +
     theme(
       title = element_text(size = 16),
       axis.title = element_blank(),
@@ -64,7 +68,7 @@ for (gene in genes) {
     width = 10, height = 10, dpi = 300
   )
 }
-
+score_matrix
 df <- data.frame(
   gene = genes,
   VS = invivo_vs_insilico,
@@ -75,4 +79,27 @@ write.table(
   df, "output/similarity_scores.tsv",
   sep = "\t",
   row.names = FALSE, quote = FALSE
+)
+
+df <- read.table("output/similarity_scores.tsv", header = TRUE, sep = "\t")
+df <- melt(df)
+colnames(df) <- c("gene", "type", "value")
+df <- df %>%
+  mutate(type = ifelse(type == "VS", "in silico", "consensus"))
+plot <- df %>%
+  ggplot(aes(x = type, y = value)) +
+  geom_boxplot() +
+  theme_minimal() +
+  theme(
+    title = element_text(size = 16),
+    axis.title = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    axis.text = element_text(size = 14),
+    plot.background = element_rect(fill = "white")
+  )
+ggsave(
+  "output/similarity_scores_boxplot.png",
+  plot = plot,
+  width = 10, height = 10, dpi = 300
 )
