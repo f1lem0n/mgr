@@ -1,4 +1,4 @@
-BLAST_DB="refseq_rna"
+BLAST_DB="refseq_select_rna"
 
 root=$(pwd)
 
@@ -24,23 +24,24 @@ for gene in $(ls output/); do
     cd ..
     # echo "Searching for homologs..."
     # blastn \
-    #     -db $BLAST_DB \
     #     -query seq.fasta \
-    #     -out blastn.xml \
+    #     -out blastx.xml \
+    #     -db $BLAST_DB \
+    #     -num_threads 12 \
     #     -outfmt "5" \
     #     -max_target_seqs 500 \
-    #     -remote
-    # python $root/scripts/blast_xml2fasta.py blastn.xml > seqdump.fasta
+    #     -evalue 0.05
+    # python $root/scripts/blast_xml2fasta.py blastx.xml > seqdump.fasta
     if [ ! -s seqdump.fasta ]; then
         echo "No homologs found! Skipping..."
         cd $root
         # rm -rf output/$gene
         continue
     fi
-
     echo "Aligning homologs..."
+    cat seq.fasta seqdump.fasta > homologs.fasta
     clustalw \
-        -INFILE="seqdump.fasta" \
+        -INFILE="homologs.fasta" \
         -OUTFILE="homologs.aln"
 
     cd consensus

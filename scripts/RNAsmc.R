@@ -68,7 +68,7 @@ for (gene in genes) {
     width = 10, height = 10, dpi = 300
   )
 }
-score_matrix
+
 df <- data.frame(
   gene = genes,
   VS = invivo_vs_insilico,
@@ -90,13 +90,15 @@ plot <- df %>%
   ggplot(aes(x = type, y = value)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1) +
   geom_dotplot(
+    aes(fill = gene),
     binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.5, col = NA, fill = "red"
+    alpha = 0.8, col = NA
   ) +
+  ylab("Similarity score") +
   theme_classic() +
   theme(
     title = element_text(size = 16),
-    axis.title = element_blank(),
+    axis.title.x = element_blank(),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
