@@ -31,8 +31,8 @@ for gene in $(ls output/); do
     #     -outfmt "5" \
     #     -max_target_seqs 500 \
     #     -evalue 0.05
-    # python $root/scripts/blast_xml2fasta.py blastx.xml > seqdump.fasta
-    if [ ! -s seqdump.fasta ]; then
+    # python $root/scripts/blast_xml2fasta.py blastx.xml > seqdump.txt
+    if [ ! -s seqdump.txt ]; then
         echo "No homologs found! Skipping..."
         cd $root
         # rm -rf output/$gene
