@@ -5,9 +5,17 @@ root=$(pwd)
 for gene in $(ls output/); do
     echo "processing [ $gene ]"
     cd output/$gene
-    mkdir -p invivo insilico consensus CT
+    mkdir -p \
+        vienna/invivo \
+        vienna/insilico \
+        vienna/consensus \
+        vienna/CT \
+        mfold/invivo \
+        mfold/insilico \
+        mfold/consensus \
+        mfold/CT
 
-    cd insilico
+    cd vienna/insilico
     echo "Generating in silico structure..."
     RNAfold --noLP -p -d2 -i ../seq.fasta > MFEs.txt
     b2ct < MFEs.txt > ../CT/insilico.ct
