@@ -79,6 +79,7 @@ Do budowy indeksu i późniejszego mapowania odczytów do genomu referencyjnego
 użyto narzędzia `bowtie2`. Najpierw należy zbudować indeks:
 
 ```bash
+mkdir -p output/index
 bowtie2-build \
     data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
     output/index/S288C
@@ -95,7 +96,7 @@ mkdir -p output/genome_aln
 for f in $(ls output/reads_trimmed/*.fastq.gz); do
     bowtie2 \
 	-p 4 --no-mixed --no-discordant --very-sensitive \
-        -x output/index/S228C \
+        -x output/index/S288C \
         -U $f \
         -S output/genome_aln/$(basename $f .fastq.gz).sam
 
