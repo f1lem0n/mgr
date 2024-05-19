@@ -108,3 +108,13 @@ scripts/RNAFramework/rf-count \
     -f data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
     -o output/RTS_counts/
 ```
+
+następnie użyto narzędzia rf-rctools do konwersji plików binarnych do formatu wiggle:
+
+```bash
+scripts/RNAFramework/rf-rctools view output/RTS_counts/SRR815623.rc -t > output/RTS_counts/minus.wig
+scripts/RNAFramework/rf-rctools view output/RTS_counts/SRR815629.rc -t > output/RTS_counts/plus.wig
+```
+
+Aby obliczyć sygnał od DMS wykorzystano kod w pythonie dostępny w pliku
+`notebooks/01_parse_wig.ipynb`.
