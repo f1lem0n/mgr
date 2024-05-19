@@ -173,7 +173,10 @@ for (program in programs) {
         plot.background = element_rect(fill = "white")
       )
     ggsave(
-      paste0("output/structures/", type, "similarity_scores_boxplot.png"),
+      paste0(
+        "output/structures/", type,
+        "similarity_scores_boxplot_", program, ".png"
+      ),
       plot = plot,
       width = 10, height = 10, dpi = 300
     )
