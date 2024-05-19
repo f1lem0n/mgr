@@ -9,7 +9,7 @@ tree -d
 │   ├── index
 │   ├── peaks
 │   ├── QC_premap
-│   ├── genome_aln
+│   ├── bowtie2_alignment
 │   └── reads_trimmed
 ├── data
 │   ├── reads
@@ -76,54 +76,59 @@ done
 ## Indeksowanie genomu referencyjnego
 
 Do budowy indeksu i późniejszego mapowania odczytów do genomu referencyjnego
-użyto narzędzia `bowtie2`. Najpierw należy zbudować indeks:
+użyto narzędzia `STAR`. Najpierw należy zbudować indeks:
+
+STAR:
 
 ```bash
-mkdir -p output/index
-bowtie2-build \
-    data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
-    output/index/S288C
+mkdir -p output/STAR_index
+STAR \
+    --runMode genomeGenerate \
+    --genomeSAindexNbases 10 \
+    --genomeFastaFiles data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
+    --genomeDir output/STAR_index
 ```
+
 
 ## Mapowanie odczytów do genomu referencyjnego
 
-Do mapowania odczytów do genomu referencyjnego użyto narzędzia `bowtie2`.
+Do mapowania odczytów do genomu referencyjnego użyto narzędzia `STAR`.
 Następnie przy pomocy `samtools view` przekonwertowano pliki
 `sam` na format `bam`.
 
+STAR:
+
 ```bash
-mkdir -p output/genome_aln
+mkdir -p output/STAR_alignment
+
 for f in $(ls output/reads_trimmed/*.fastq.gz); do
-    bowtie2 \
-	-p 4 --no-mixed --no-discordant --very-sensitive \
-        -x output/index/S288C \
-        -U $f \
-        -S output/genome_aln/$(basename $f .fastq.gz).sam
+    STAR \
+        --genomeDir output/STAR_index \
+        --readFilesCommand zcat \
+        --readFilesIn output/reads_trimmed/$f \
+        --runThreadN 12 \
+        --outFileNamePrefix output/STAR_alignment/$(basename $f .fastq.gz)_ \
+        --alignEndsType EndToEnd \
+        --outFilterMultimapNmax 100 \
+        --seedSearchStartLmax 15 \
+        -outSAMattributes All \
 
     samtools view -h -S -b \
-        -o output/genome_aln/$(basename $f .fastq.gz).bam \
-        output/genome_aln/$(basename $f .fastq.gz).sam
+        -o output/STAR_alignment/$(basename $f .fastq.gz).bam \
+        output/STAR_alignment/$(basename $f .fastq.gz)_Aligned.out.sam
 
-    rm output/genome_aln/$(basename $f .fastq.gz).sam
+    rm output/STAR_alignment/$(basename $f .fastq.gz)_Aligned.out.sam
 done
 ```
 
 ## Wykrywanie sygnału od DMS
 
-Do wykrywania sygnału od DMS użyto narzędzia `MACS2` (analogicznie
-jak w przypadku protokołów ChIPseq). Trzeba mieć pliki `bam` dla
-próbki kontrolnej i eksperymentalnej oraz oszacować wielkość genomu,
-do którego mapowane były odczyty. W tym przypadku wielkość genomu
-*Saccharomyces cerevisiae* wynosi 12359296 bp. Nie zastosowano modelu
-fragmentacji (`--nomodel`), ponieważ `MACS2` nie znajduje odpowiedniej
-liczby sparowanych sygnałów.
+Aby wykryć sygnał od DMS, najpierw użyto `rf-count` z pakietu `RNAFramework`
+do zliczenia liczby zatrzymań odwrotnej transkryptazy na każdej pozycji w genomie:
 
 ```bash
-macs2 callpeak \
-    -t output/genome_aln/SRR815629.bam \
-    -c output/genome_aln/SRR815623.bam \
-    --outdir output/peaks \
-    -g 12359296 \
-    --nomodel \
-    -n DMS \
+scripts/RNAFramework/rf-count \
+    output/STAR_alignment/SRR81562*.bam \
+    -f data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
+    -o output/RTS_counts/
 ```
