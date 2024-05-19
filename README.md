@@ -109,12 +109,12 @@ scripts/RNAFramework/rf-count \
     -o output/RTS_counts/
 ```
 
-następnie użyto narzędzia rf-rctools do konwersji plików binarnych do formatu wiggle:
+następnie użyto narzędzia rf-rctools do konwersji plików binarnych do formatu tab:
 
 ```bash
-scripts/RNAFramework/rf-rctools view output/RTS_counts/SRR815623.rc -t > output/RTS_counts/minus.wig
-scripts/RNAFramework/rf-rctools view output/RTS_counts/SRR815629.rc -t > output/RTS_counts/plus.wig
+scripts/RNAFramework/rf-rctools view output/RTS_counts/SRR815623.rc -t > output/RTS_counts/minus.tab
+scripts/RNAFramework/rf-rctools view output/RTS_counts/SRR815629.rc -t > output/RTS_counts/plus.tab
 ```
 
 Aby obliczyć sygnał od DMS wykorzystano kod w pythonie dostępny w pliku
-`notebooks/01_parse_wig.ipynb`.
+`notebooks/01_parse_tab.ipynb`.
