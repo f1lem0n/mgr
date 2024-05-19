@@ -1,26 +1,6 @@
 # Protokół analizy danych z DMS-seq
 
-## Struktura projektu
-
-```
-tree -d
-.
-├── output
-│   ├── index
-│   ├── peaks
-│   ├── QC_premap
-│   ├── bowtie2_alignment
-│   └── reads_trimmed
-├── data
-│   ├── reads
-│   └── S288C_reference_genome_R62-1-1_20090218
-└── scripts
-```
-
-(*wyświetlono tylko foldery*)
-
 ## Środowisko
-
 UWAGA! Wszystkie poniższe skrypty należy uruchamiać z poziomu roota projektu
 z aktywnym środowiskiem `mgr`.
 
@@ -29,8 +9,6 @@ Aby stworzyć i aktywować środowisko należy uruchomić:
 conda env create -f environment.yml
 conda activate mgr
 ```
-
-
 
 ## Dane
 
@@ -57,7 +35,6 @@ wget http://sgd-archive.yeastgenome.org/sequence/S288C_reference/genome_releases
 tar -xf S288C_reference_genome_R62-1-1_20090218.tgz
 rm S288C_reference_genome_R62-1-1_20090218.tgz
 ```
-
 
 ## Kontrola jakości odczytów
 
@@ -88,7 +65,6 @@ STAR \
     --genomeFastaFiles data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
     --genomeDir output/STAR_index
 ```
-
 
 ## Mapowanie odczytów do genomu referencyjnego
 
