@@ -53,7 +53,15 @@ done
 ## Indeksowanie genomu referencyjnego
 
 Do budowy indeksu i późniejszego mapowania odczytów do genomu referencyjnego
-użyto narzędzia `STAR`. Najpierw należy zbudować indeks:
+użyto narzędzia `STAR`. Najpierw należy zbudować indeks. Jeśli plik `gtf` nie
+nie jest dostępny, można przekonwertować plik `gff` na `gtf` przy pomocy
+programu `gffread`:
+
+```bash
+gffread \
+    -T data/S288C_reference_genome_R62-1-1_20090218/saccharomyces_cerevisiae_R62-1-1_20090221.gff \
+    -o data/S288C_reference_genome_R62-1-1_20090218/saccharomyces_cerevisiae_R62-1-1_20090221.gtf
+```
 
 STAR:
 
@@ -62,7 +70,9 @@ mkdir -p output/STAR_index
 STAR \
     --runMode genomeGenerate \
     --genomeSAindexNbases 10 \
-    --genomeFastaFiles data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
+    --genomeFastaFiles data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218_adj.fasta \
+    --sjdbGTFfile data/S288C_reference_genome_R62-1-1_20090218/saccharomyces_cerevisiae_R62-1-1_20090221.gtf \
+    --sjdbOverhang 99 \
     --genomeDir output/STAR_index
 ```
 
@@ -87,13 +97,7 @@ for f in $(ls output/reads_trimmed/*.fastq.gz); do
         --alignEndsType EndToEnd \
         --outFilterMultimapNmax 100 \
         --seedSearchStartLmax 15 \
-        -outSAMattributes All \
-
-    samtools view -h -S -b \
-        -o output/STAR_alignment/$(basename $f .fastq.gz).bam \
-        output/STAR_alignment/$(basename $f .fastq.gz)_Aligned.out.sam
-
-    rm output/STAR_alignment/$(basename $f .fastq.gz)_Aligned.out.sam
+        --outSAMtype BAM SortedByCoordinate
 done
 ```
 
