@@ -91,7 +91,7 @@ for f in $(ls output/reads_trimmed/*.fastq.gz); do
     STAR \
         --genomeDir output/STAR_index \
         --readFilesCommand zcat \
-        --readFilesIn output/reads_trimmed/$f \
+        --readFilesIn $f \
         --runThreadN 12 \
         --outFileNamePrefix output/STAR_alignment/$(basename $f .fastq.gz)_ \
         --alignEndsType EndToEnd \
