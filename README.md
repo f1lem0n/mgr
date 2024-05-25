@@ -97,7 +97,7 @@ for f in $(ls output/reads_trimmed/*.fastq.gz); do
         --alignEndsType EndToEnd \
         --outFilterMultimapNmax 100 \
         --seedSearchStartLmax 15 \
-        --outSAMtype BAM SortedByCoordinate
+        --outSAMtype BAM Unsorted
 done
 ```
 
