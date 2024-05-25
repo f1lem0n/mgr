@@ -109,7 +109,7 @@ do zliczenia liczby zatrzymań odwrotnej transkryptazy na każdej pozycji w geno
 ```bash
 scripts/RNAFramework/rf-count \
     output/STAR_alignment/SRR81562*.bam \
-    -f data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218.fsa \
+    -f data/S288C_reference_genome_R62-1-1_20090218/S288C_reference_sequence_R62-1-1_20090218_adj.fasta \
     -o output/RTS_counts/
 ```
 
