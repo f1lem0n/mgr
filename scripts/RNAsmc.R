@@ -6,6 +6,7 @@ library(tidyverse)
 library(dplyr)
 
 types <- list.dirs("output/structures/", full.names = FALSE, recursive = FALSE)
+types <- c("mRNA")
 programs <- c("vienna")
 
 invivo_vs_insilico <- c()
@@ -89,24 +90,26 @@ for (program in programs) {
           color = "black", size = 4
         ) +
         guides(
+          # fill = "none"
           fill = guide_colourbar(
             barwidth = 1,
             barheight = 20,
             frame.colour = "black",
             ticks.colour = "black",
-            title = "Similarity score"
+            title = expression(italic("SS")),
           )
         ) +
         coord_fixed() +
-        ggtitle(paste0("RNA structure similarity of ", gene)) +
+        # ggtitle(paste0("RNA structure similarity of ", gene)) +
         theme_minimal() +
         theme(
           title = element_text(size = 16),
           axis.title = element_blank(),
           axis.ticks = element_blank(),
           panel.grid = element_blank(),
-          axis.text = element_text(size = 14),
-          plot.background = element_rect(fill = "white")
+          axis.text.y = element_blank(),
+          axis.text.x = element_text(size = 14, face = "italic"),
+          # plot.background = element_rect(fill = "white")
         )
       ggsave(
         paste0(
@@ -150,26 +153,28 @@ for (program in programs) {
       header = TRUE, sep = "\t"
     )
     df <- melt(df)
-    colnames(df) <- c("gene", "type", "value")
+    colnames(df) <- c("gen", "type", "value")
     replacements <- c("VS" = "in silico", "VC" = "consensus", "VG" = "guided")
     df$type <- str_replace_all(df$type, replacements)
     plot <- df %>%
       ggplot(aes(x = type, y = value)) +
       geom_boxplot(staplewidth = 0.1, lwd = 1) +
       geom_dotplot(
-        aes(fill = gene),
+        aes(fill = gen),
         binaxis = "y", stackdir = "center", dotsize = 0.5,
         alpha = 0.8, col = NA
       ) +
-      ylab("Similarity score") +
+      ylab("SS") +
       theme_classic() +
       theme(
         title = element_text(size = 16),
         axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14, face = "italic", angle = 90),
         axis.ticks.x = element_blank(),
         axis.line.x = element_blank(),
         panel.grid = element_blank(),
-        axis.text = element_text(size = 14),
+        axis.text.x = element_text(size = 14, face = "italic"),
+        axis.text.y = element_text(size = 14),
         plot.background = element_rect(fill = "white")
       )
     ggsave(
