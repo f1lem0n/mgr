@@ -2,7 +2,7 @@ BLAST_DB="refseq_select_rna"
 
 root=$(pwd)
 
-for type in mRNA; do
+for type in rRNA; do
     for gene in $(ls ../output/structures/$type/); do
         if [ ! -d ../output/structures/$type/$gene ]; then
             continue
@@ -49,21 +49,21 @@ for type in mRNA; do
         gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alidot.png alidot.ps > /dev/null
         gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alirna.png alirna.ps > /dev/null
 
-        cd ../..
-        echo "Aligning protein homologs..."
-        cat protein.fasta seqdump_aa.txt > homologs_aa.fasta
-        cat nucleotide.fasta pal2nal_guides.txt > pal2nal_guides.fasta
-        clustalw \
-            -INFILE="homologs_aa.fasta" \
-            -OUTFILE="homologs_aa.aln"
-        pal2nal.pl homologs_aa.aln pal2nal_guides.fasta > guided.aln
+        # cd ../..
+        # echo "Aligning protein homologs..."
+        # cat protein.fasta seqdump_aa.txt > homologs_aa.fasta
+        # cat nucleotide.fasta pal2nal_guides.txt > pal2nal_guides.fasta
+        # clustalw \
+        #     -INFILE="homologs_aa.fasta" \
+        #     -OUTFILE="homologs_aa.aln"
+        # pal2nal.pl homologs_aa.aln pal2nal_guides.fasta > guided.aln
 
-        cd vienna/consensus_guided
-        echo "Generating consensus structure..."
-        RNAalifold --noLP -p -d2 < ../../guided.aln > MFEs.txt
-        b2ct < MFEs.txt > ../CT/consensus_guided.ct
-        gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alidot.png alidot.ps > /dev/null
-        gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alirna.png alirna.ps > /dev/null
+        # cd vienna/consensus_guided
+        # echo "Generating consensus structure..."
+        # RNAalifold --noLP -p -d2 < ../../guided.aln > MFEs.txt
+        # b2ct < MFEs.txt > ../CT/consensus_guided.ct
+        # gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alidot.png alidot.ps > /dev/null
+        # gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -sOutputFile=alirna.png alirna.ps > /dev/null
         cd $root
     done
 done

@@ -6,7 +6,7 @@ library(tidyverse)
 library(dplyr)
 
 types <- list.dirs("output/structures/", full.names = FALSE, recursive = FALSE)
-types <- c("mRNA")
+types <- c("rRNA")
 programs <- c("vienna")
 
 invivo_vs_insilico <- c()
@@ -87,28 +87,31 @@ for (program in programs) {
         ) +
         geom_text(
           aes(label = round(value, digits = 2)),
-          color = "black", size = 4
+          color = "black", size = 8
         ) +
         guides(
           # fill = "none"
           fill = guide_colourbar(
-            barwidth = 1,
+            barwidth = 2,
             barheight = 20,
             frame.colour = "black",
             ticks.colour = "black",
             title = expression(italic("SS")),
           )
         ) +
+        guides(fill = "none") +
         coord_fixed() +
         # ggtitle(paste0("RNA structure similarity of ", gene)) +
         theme_minimal() +
         theme(
-          title = element_text(size = 16),
+          # title = element_text(size = 16),
+          legend.text = element_text(size = 18),
+          legend.title = element_text(size = 24),
           axis.title = element_blank(),
           axis.ticks = element_blank(),
           panel.grid = element_blank(),
-          axis.text.y = element_blank(),
-          axis.text.x = element_text(size = 14, face = "italic"),
+          # axis.text.y = element_blank(),
+          axis.text = element_text(size = 24, face = "italic"),
           # plot.background = element_rect(fill = "white")
         )
       ggsave(
@@ -134,7 +137,7 @@ for (program in programs) {
         VC = invivo_vs_consensus
       )
     }
-
+    print(df)
     write.table(
       df,
       paste0(
@@ -143,47 +146,6 @@ for (program in programs) {
       ),
       sep = "\t",
       row.names = FALSE, quote = FALSE
-    )
-
-    df <- read.table(
-      paste0(
-        "output/structures/", type,
-        "/similarity_scores_", program, ".tsv"
-      ),
-      header = TRUE, sep = "\t"
-    )
-    df <- melt(df)
-    colnames(df) <- c("gen", "type", "value")
-    replacements <- c("VS" = "in silico", "VC" = "consensus", "VG" = "guided")
-    df$type <- str_replace_all(df$type, replacements)
-    plot <- df %>%
-      ggplot(aes(x = type, y = value)) +
-      geom_boxplot(staplewidth = 0.1, lwd = 1) +
-      geom_dotplot(
-        aes(fill = gen),
-        binaxis = "y", stackdir = "center", dotsize = 0.5,
-        alpha = 0.8, col = NA
-      ) +
-      ylab("SS") +
-      theme_classic() +
-      theme(
-        title = element_text(size = 16),
-        axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 14, face = "italic", angle = 90),
-        axis.ticks.x = element_blank(),
-        axis.line.x = element_blank(),
-        panel.grid = element_blank(),
-        axis.text.x = element_text(size = 14, face = "italic"),
-        axis.text.y = element_text(size = 14),
-        plot.background = element_rect(fill = "white")
-      )
-    ggsave(
-      paste0(
-        "output/structures/", type,
-        "/similarity_scores_boxplot_", program, ".png"
-      ),
-      plot = plot,
-      width = 10, height = 10, dpi = 300
     )
   }
 }
