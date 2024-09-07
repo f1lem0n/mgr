@@ -6,7 +6,7 @@ library(tidyverse)
 library(dplyr)
 
 types <- list.dirs("output/structures/", full.names = FALSE, recursive = FALSE)
-types <- c("rRNA")
+types <- c("tRNA")
 programs <- c("vienna")
 
 invivo_vs_insilico <- c()

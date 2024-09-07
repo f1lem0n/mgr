@@ -1,1068 +1,1142 @@
+---
+author: Filip Hajdyła
+date: "2024-07-07"
+title: "Analiza danych z wygenerowanych struktur RNA"
+---
+
 # Biblioteki
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 library(reshape2)
 library(tidyverse)
 library(ggplot2)
+library(broom)
+library(dunn.test)
+library(GGally)
+library(ggh4x)
+library(outliers)
+library(car)
+library(latex2exp)
+library(Hmisc)
 ```
 
-# Badania korelacji
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
 
-## Wczytanie danych dla badań korelacji
+# Badanie sygnałów od DMS
+
+```{r, fig.height=10, message=FALSE, warning=FALSE}
+sig_files <- list.files("../output_yeast/DMS_signal", full.names = TRUE)
+sig_files
+combined_df <- data.frame()
+d_S <- c()
+chrs <- c()
+for (sf in sig_files) {
+  df <- read.table(sf, header = TRUE, sep = "\t")
+  chr <- basename(sf) %>% str_remove(".tsv")
+  df$chr <- chr
+  df$position <- 1:nrow(df)
+  colnames(df) <- c("base", "signal", "chr", "position")
+
+  n <- df %>%
+    filter(signal > 0) %>%
+    dim()
+  n <- n[1]
+  l <- dim(df)[1]
+  chrs <- append(chrs, c(chr))
+  d_S <- append(d_S, c(n / l))
+  combined_df <- rbind(combined_df, df)
+}
+head(combined_df)
+```
+
+Liczba sygnalow znormalizowana do dlugosci chromosmu
+```{r, fig.height=10, message=FALSE, warning=FALSE}
+d_S <- data.frame(chr = chrs, d = d_S)
+mean(d_S$d)
+sd(d_S$d)
+```
+
+Średnia, mediana, sd, min, max wartości sygnału od DMS:
+
+```{r, message=FALSE, warning=FALSE}
+combined_df %>%
+  group_by(chr) %>%
+  do(tidy(mean(.$signal)))
+combined_df %>%
+  group_by(chr) %>%
+  do(tidy(median(.$signal)))
+combined_df %>%
+  group_by(chr) %>%
+  do(tidy(sd(.$signal)))
+combined_df %>%
+  group_by(chr) %>%
+  do(tidy(min(.$signal)))
+combined_df %>%
+  group_by(chr) %>%
+  do(tidy(max(.$signal)))
+```
+
+Rozkład sygnałów na chromosomach
+```{r, fig.height=10, message=FALSE, warning=FALSE}
+p <- combined_df %>%
+  ggplot(aes(x = position, y = signal, col = chr)) +
+  geom_line() +
+  facet_wrap(~chr,
+    scales = "free_x", ncol = 1,
+    strip.position = "left"
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "none",
+    panel.grid = element_blank(),
+  )
+ggsave(
+  "fig/signal.png",
+  plot = p, width = 10,
+  height = 12, dpi = 300
+)
+```
+
+# Wczytanie danych
+
 ```{r}
-df <- read.csv("../output_yeast_all/structures/combined.csv")
-colnames(df) <- c("gen", "struktura", "SS", "typ", "IA", "CS")
+df <- read.csv("../output_yeast/structures/combined.csv", header = TRUE)
+replacements <- c("VS" = "in silico", "VC" = "consensus", "VG" = "guided")
+df$struktura <- str_replace_all(df$struktura, replacements)
+df <- df %>%
+  filter(IA > 0.2)
+
 head(df)
 str(df)
+summary(df)
+length(unique(df$gen))
 ```
 
-## Badanie korelacji $SS$-$CS$
+# Badanie rozkładu danych i obserwacji wpływowych w modelach regresji ze zmiennymi kategorycznymi
 
-Korelacja pearsona
 ```{r}
-cor.test(df$SS, df$CS)
-```
+shapiro.test(df$SS)
+shapiro.test(df$CS)
 
-Model liniowy
-```{r}
-ss_cs_lm <- lm(SS ~ CS, data = df)
-summary(ss_cs_lm)
-```
-
-Wykres
-```{r}
-plot <- ggplot(df, aes(x = SS, y = CS)) +
-  geom_point(size = 2.5, col = "blue") +
-  geom_smooth(method = "lm") +
-  theme_classic() +
+p <- ggplot(data = df, aes(x = SS)) +
+  geom_histogram(binwidth = 1) +
+  stat_theodensity(aes(y = after_stat(count)), col = "blue", lwd = 1) +
+  ylab("Liczba obserwacji") +
   theme(
-    axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
     legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
   )
-
-plot
-```
-
-Zapisanie wykresu
-```{r}
+p
 ggsave(
-  "../output_yeast_all/structures/SS_CS_corr.png",
-  plot = plot, width = 10,
+  "fig/SS.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+p <- ggplot(data = df, aes(x = CS)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/CS.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+df %>%
+  group_by(struktura) %>%
+  do(tidy(shapiro.test(.$SS)))
+df %>%
+  group_by(struktura) %>%
+  do(tidy(shapiro.test(.$CS)))
+
+p <- ggplot(data = df, aes(x = SS)) +
+  geom_histogram(binwidth = 1) +
+  stat_theodensity(aes(y = after_stat(count)), col = "blue", lwd = 1) +
+  facet_wrap(~struktura, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/SS_strukt.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+p <- ggplot(data = df, aes(x = CS)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  facet_wrap(~struktura, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/CS_strukt.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+df %>%
+  group_by(typ) %>%
+  do(tidy(shapiro.test(.$SS)))
+df %>%
+  group_by(typ) %>%
+  do(tidy(shapiro.test(.$CS)))
+
+p <- ggplot(data = df, aes(x = SS)) +
+  geom_histogram(binwidth = 1) +
+  stat_theodensity(aes(y = after_stat(count)), col = "blue", lwd = 1) +
+  facet_wrap(~typ, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/SS_typ.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+p <- ggplot(data = df, aes(x = CS)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  facet_wrap(~typ, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/CS_typ.png",
+  plot = p, width = 15,
   height = 10, dpi = 300
 )
 ```
 
-## Badanie korelacji $SS$-$IA$
+Odfiltrowano wartości ekstremalne:
 
-Rodzaje struktur
 ```{r}
-unique(df$struktura)
+df_hist <- df %>% filter(SS < 10, CS > 0)
+shapiro.test(df_hist$SS)
+shapiro.test(df_hist$CS)
+
+p <- ggplot(data = df_hist, aes(x = SS)) +
+  geom_histogram(binwidth = 1) +
+  stat_theodensity(aes(y = after_stat(count)), col = "blue", lwd = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/SS_filtered.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+p <- ggplot(data = df_hist, aes(x = CS)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/CS_filtered.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+df_hist %>%
+  group_by(struktura) %>%
+  do(tidy(shapiro.test(.$SS)))
+df_hist %>%
+  group_by(struktura) %>%
+  do(tidy(shapiro.test(.$CS)))
+
+p <- ggplot(data = df_hist, aes(x = SS)) +
+  geom_histogram(binwidth = 1) +
+  stat_theodensity(aes(y = after_stat(count)), col = "blue", lwd = 1) +
+  facet_wrap(~struktura, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/SS_strukt_filtered.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+p <- ggplot(data = df_hist, aes(x = CS)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  facet_wrap(~struktura, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/CS_strukt_filtered.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+df_hist %>%
+  group_by(typ) %>%
+  do(tidy(shapiro.test(.$SS)))
+df_hist %>%
+  group_by(typ) %>%
+  do(tidy(shapiro.test(.$CS)))
+
+p <- ggplot(data = df_hist, aes(x = SS)) +
+  geom_histogram(binwidth = 1) +
+  stat_theodensity(aes(y = after_stat(count)), col = "blue", lwd = 1) +
+  facet_wrap(~typ, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/SS_typ_filtered.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+p <- ggplot(data = df_hist, aes(x = CS)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  facet_wrap(~typ, nrow = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/CS_typ_filtered.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
 ```
 
-### Analiza dla struktury *in silico*
 ```{r}
-strukt <- "VS"
-filtered_df <- df %>%
-  filter(struktura == strukt)
-m_df <- filtered_df[filtered_df$typ == "mRNA", ]
-t_df <- filtered_df[filtered_df$typ == "tRNA", ]
-r_df <- filtered_df[filtered_df$typ == "rRNA", ]
-```
+df_hist <- df %>% filter(struktura == "in silico")
+shapiro.test(df_hist$IA)
+p <- ggplot(data = df_hist, aes(x = IA)) +
+  geom_histogram(binwidth = 0.03) +
+  stat_theodensity(aes(y = after_stat(count) * 0.03), col = "blue", lwd = 1) +
+  ylab("Liczba obserwacji") +
+  theme(
+    axis.title.x = element_text(size = 24, face = "italic"),
+    axis.title.y = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+  )
+p
+ggsave(
+  "fig/IA.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
 
-#### mRNA
-
-Model liniowy
-```{r}
-m_lm <- lm(SS ~ IA, data = m_df)
-summary(m_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(m_df$IA, m_df$SS)
-```
-
-#### tRNA
-
-Model liniowy
-```{r}
-t_lm <- lm(SS ~ IA, data = t_df)
-summary(t_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(t_df$IA, t_df$SS)
-```
-
-#### rRNA
-
-Model liniowy
-```{r}
-r_lm <- lm(SS ~ IA, data = r_df)
-summary(r_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(r_df$IA, r_df$SS)
-```
-
-#### Wykres
-
-```{r}
-plot <- ggplot(filtered_df, aes(x = IA, y = SS, colour = typ)) +
-  geom_point(size = 2.5) +
-  geom_abline(
-    slope = coef(m_lm)[2],
-    intercept = coef(m_lm)[1],
-    colour = "red", size = 1.5
-  ) +
-  geom_abline(
-    slope = coef(r_lm)[2],
-    intercept = coef(r_lm)[1],
-    colour = "green", size = 1.5
-  ) +
-  geom_abline(
-    slope = coef(t_lm)[2],
-    intercept = coef(t_lm)[1],
-    colour = "blue", size = 1.5
-  ) +
-  guides(colour = guide_legend(title = "")) +
-  guides(colour = "none") +
+p <- ggplot(data = df_hist, aes(x = typ, y = IA)) +
+  geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
   theme_classic() +
+  theme(
+    legend.text = element_text(size = 18, face = "italic"),
+    legend.title = element_text(size = 24),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 24, face = "italic"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24),
+  )
+p
+ggsave(
+  "fig/IA_box.png",
+  plot = p, width = 15,
+  height = 10, dpi = 300
+)
+
+anova_ia <- aov(IA ~ typ, data = df_hist)
+summary(anova_ia)
+TukeyHSD(anova_ia)
+```
+
+# Badanie korelacji
+
+## Zmienne parami
+
+```{r, message=FALSE, warning=FALSE}
+p <- df %>%
+  select(SS, CS, IA, GC, K, L) %>%
+  ggpairs(
+    aes(col = df$typ, alpha = 0.3),
+    upper = list(continuous = wrap("cor", method = "spearman")),
+    axisLabels = "none"
+  ) +
   theme(
     axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
     legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+    strip.text = element_text(size = 20, face = "italic"),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  paste0(
-    "../output_yeast_all/structures/", strukt, "_IA_SS_corr.png"
-  ),
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/pairs_by_type.png",
+  plot = p, width = 15,
+  height = 15, dpi = 300
 )
-```
 
-### Analiza dla struktury *consensus*
-```{r}
-strukt <- "VC"
-filtered_df <- df %>%
-  filter(struktura == strukt)
-m_df <- filtered_df[filtered_df$typ == "mRNA", ]
-t_df <- filtered_df[filtered_df$typ == "tRNA", ]
-r_df <- filtered_df[filtered_df$typ == "rRNA", ]
-```
-
-#### mRNA
-
-Model liniowy
-```{r}
-m_lm <- lm(SS ~ IA, data = m_df)
-summary(m_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(m_df$IA, m_df$SS)
-```
-
-#### tRNA
-
-Model liniowy
-```{r}
-t_lm <- lm(SS ~ IA, data = t_df)
-summary(t_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(t_df$IA, t_df$SS)
-```
-
-#### rRNA
-
-Model liniowy
-```{r}
-r_lm <- lm(SS ~ IA, data = r_df)
-summary(r_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(r_df$IA, r_df$SS)
-```
-
-#### Wykres
-
-```{r}
-plot <- ggplot(filtered_df, aes(x = IA, y = SS, colour = typ)) +
-  geom_point(size = 2.5) +
-  geom_abline(
-    slope = coef(m_lm)[2],
-    intercept = coef(m_lm)[1],
-    colour = "red", size = 1.5
+p <- df %>%
+  select(SS, CS, IA, GC, K, L) %>%
+  ggpairs(
+    aes(col = df$struktura, alpha = 0.3),
+    upper = list(continuous = wrap("cor", method = "spearman")),
+    axisLabels = "none"
   ) +
-  geom_abline(
-    slope = coef(r_lm)[2],
-    intercept = coef(r_lm)[1],
-    colour = "green", size = 1.5
-  ) +
-  geom_abline(
-    slope = coef(t_lm)[2],
-    intercept = coef(t_lm)[1],
-    colour = "blue", size = 1.5
-  ) +
-  guides(colour = guide_legend(title = "")) +
-  guides(colour = "none") +
-  theme_classic() +
   theme(
     axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
     legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+    strip.text = element_text(size = 20, face = "italic"),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  paste0(
-    "../output_yeast_all/structures/", strukt, "_IA_SS_corr.png"
-  ),
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/pairs_by_struct.png",
+  plot = p, width = 15,
+  height = 15, dpi = 300
 )
-```
 
-### Analiza dla struktury *guided*
-```{r}
-strukt <- "VG"
-filtered_df <- df %>%
-  filter(struktura == strukt)
-m_df <- filtered_df[filtered_df$typ == "mRNA", ]
-t_df <- filtered_df[filtered_df$typ == "tRNA", ]
-r_df <- filtered_df[filtered_df$typ == "rRNA", ]
-```
+df %>%
+  filter(SS < 10, CS > 0) %>%
+  select(struktura) %>%
+  describe()
+df %>%
+  filter(SS < 10, CS > 0) %>%
+  select(typ) %>%
+  describe()
 
-#### mRNA
+df_noextreme <- df %>% filter(SS < 11, CS > 0)
 
-Model liniowy
-```{r}
-m_lm <- lm(SS ~ IA, data = m_df)
-summary(m_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(m_df$IA, m_df$SS)
-```
-
-#### Wykres
-
-```{r}
-plot <- ggplot(filtered_df, aes(x = IA, y = SS, colour = typ)) +
-  geom_point(size = 2.5) +
-  geom_abline(
-    slope = coef(m_lm)[2],
-    intercept = coef(m_lm)[1],
-    colour = "red", size = 1.5
+p <- df_noextreme %>%
+  select(SS, CS, IA, GC, K, L) %>%
+  ggpairs(
+    aes(col = df_noextreme$typ, alpha = 0.3),
+    upper = list(continuous = wrap("cor", method = "spearman")),
+    axisLabels = "none"
   ) +
-  guides(colour = guide_legend(title = "")) +
-  guides(colour = "none") +
-  theme_classic() +
   theme(
     axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
     legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+    strip.text = element_text(size = 20, face = "italic"),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  paste0(
-    "../output_yeast_all/structures/", strukt, "_IA_SS_corr.png"
-  ),
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/pairs_by_type_filtered.png",
+  plot = p, width = 15,
+  height = 15, dpi = 300
 )
-```
 
-## Badanie korelacji $CS$-$IA$
-
-Rodzaje struktur
-```{r}
-unique(df$struktura)
-```
-
-### Analiza dla struktury *in silico*
-```{r}
-strukt <- "VS"
-filtered_df <- df %>%
-  filter(struktura == strukt)
-m_df <- filtered_df[filtered_df$typ == "mRNA", ]
-t_df <- filtered_df[filtered_df$typ == "tRNA", ]
-r_df <- filtered_df[filtered_df$typ == "rRNA", ]
-```
-
-#### mRNA
-
-Model liniowy
-```{r}
-m_lm <- lm(CS ~ IA, data = m_df)
-summary(m_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(m_df$IA, m_df$CS)
-```
-
-#### tRNA
-
-Model liniowy
-```{r}
-t_lm <- lm(CS ~ IA, data = t_df)
-summary(t_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(t_df$IA, t_df$CS)
-```
-
-#### rRNA
-
-Model liniowy
-```{r}
-r_lm <- lm(CS ~ IA, data = r_df)
-summary(r_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(r_df$IA, r_df$CS)
-```
-
-#### Wykres
-
-```{r}
-plot <- ggplot(filtered_df, aes(x = IA, y = CS, colour = typ)) +
-  geom_point(size = 2.5) +
-  geom_abline(
-    slope = coef(m_lm)[2],
-    intercept = coef(m_lm)[1],
-    colour = "red", size = 1.5
+p <- df_noextreme %>%
+  select(SS, CS, IA, GC, K, L) %>%
+  ggpairs(
+    aes(col = df_noextreme$struktura, alpha = 0.3),
+    upper = list(continuous = wrap("cor", method = "spearman")),
+    axisLabels = "none"
   ) +
-  geom_abline(
-    slope = coef(r_lm)[2],
-    intercept = coef(r_lm)[1],
-    colour = "green", size = 1.5
-  ) +
-  geom_abline(
-    slope = coef(t_lm)[2],
-    intercept = coef(t_lm)[1],
-    colour = "blue", size = 1.5
-  ) +
-  guides(colour = guide_legend(title = "")) +
-  guides(colour = "none") +
-  theme_classic() +
   theme(
     axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
     legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
+    axis.text = element_text(size = 16),
+    strip.text = element_text(size = 20, face = "italic"),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  paste0(
-    "../output_yeast_all/structures/", strukt, "_IA_CS_corr.png"
-  ),
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/pairs_by_struct_filtered.png",
+  plot = p, width = 15,
+  height = 15, dpi = 300
 )
 ```
 
-### Analiza dla struktury *consensus*
-```{r}
-strukt <- "VC"
-filtered_df <- df %>%
-  filter(struktura == strukt)
-m_df <- filtered_df[filtered_df$typ == "mRNA", ]
-t_df <- filtered_df[filtered_df$typ == "tRNA", ]
-r_df <- filtered_df[filtered_df$typ == "rRNA", ]
-```
-
-#### mRNA
-
-Model liniowy
-```{r}
-m_lm <- lm(CS ~ IA, data = m_df)
-summary(m_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(m_df$IA, m_df$CS)
-```
-
-#### tRNA
-
-Model liniowy
-```{r}
-t_lm <- lm(CS ~ IA, data = t_df)
-summary(t_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(t_df$IA, t_df$CS)
-```
-
-#### rRNA
-
-Model liniowy
-```{r}
-r_lm <- lm(CS ~ IA, data = r_df)
-summary(r_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(r_df$IA, r_df$CS)
-```
-
-#### Wykres
+# Badanie różnic (wszystkie sekwencje)
 
 ```{r}
-plot <- ggplot(filtered_df, aes(x = IA, y = CS, colour = typ)) +
-  geom_point(size = 2.5) +
-  geom_abline(
-    slope = coef(m_lm)[2],
-    intercept = coef(m_lm)[1],
-    colour = "red", size = 1.5
-  ) +
-  geom_abline(
-    slope = coef(r_lm)[2],
-    intercept = coef(r_lm)[1],
-    colour = "green", size = 1.5
-  ) +
-  geom_abline(
-    slope = coef(t_lm)[2],
-    intercept = coef(t_lm)[1],
-    colour = "blue", size = 1.5
-  ) +
-  guides(colour = guide_legend(title = "")) +
-  theme_classic() +
-  theme(
-    axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
-    legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
-  )
+df %>%
+  select(SS, CS) %>%
+  summary(digits = 2)
+df %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
 
-plot
+sd(df$SS) %>% round(2)
+sd(df$CS) %>% round(3)
+df %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
+df %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
 ```
 
 ```{r}
-ggsave(
-  paste0(
-    "../output_yeast_all/structures/", strukt, "_IA_CS_corr.png"
-  ),
-  plot = plot,
-  width = 10, height = 10, dpi = 300
-)
-```
-
-### Analiza dla struktury *guided*
-```{r}
-strukt <- "VG"
-filtered_df <- df %>%
-  filter(struktura == strukt)
-m_df <- filtered_df[filtered_df$typ == "mRNA", ]
-t_df <- filtered_df[filtered_df$typ == "tRNA", ]
-r_df <- filtered_df[filtered_df$typ == "rRNA", ]
-```
-
-#### mRNA
-
-Model liniowy
-```{r}
-m_lm <- lm(CS ~ IA, data = m_df)
-summary(m_lm)
-```
-
-Korelacja Pearsona
-```{r}
-cor.test(m_df$IA, m_df$CS)
-```
-
-#### Wykres
-
-```{r}
-plot <- ggplot(filtered_df, aes(x = IA, y = CS, colour = typ)) +
-  geom_point(size = 2.5) +
-  geom_abline(
-    slope = coef(m_lm)[2],
-    intercept = coef(m_lm)[1],
-    colour = "red", size = 1.5
-  ) +
-  guides(colour = guide_legend(title = "")) +
-  guides(colour = "none") +
-  theme_classic() +
-  theme(
-    axis.title = element_text(size = 24, face = "italic"),
-    panel.grid = element_blank(),
-    legend.text = element_text(size = 24),
-    axis.text = element_text(size = 24),
-  )
-
-plot
-```
-
-```{r}
-ggsave(
-  paste0(
-    "../output_yeast_all/structures/", strukt, "_IA_CS_corr.png"
-  ),
-  plot = plot,
-  width = 10, height = 10, dpi = 300
-)
-```
-
-# Badanie różnic między strukturami **przed** zastosowaniem odcięcia
-
-## Wczytanie danych do analizy różnic przed odcięciem
-
-```{r}
-df <- read.csv("../output_yeast_pre_threshold/structures/combined.csv")
-colnames(df) <- c("gen", "struktura", "SS", "typ", "IA", "CS")
-replacements <- c("VS" = "in silico", "VC" = "consensus", "VG" = "guided")
-df$struktura <- str_replace_all(df$struktura, replacements)
-head(df)
-str(df)
-```
-
-```{r}
-m_df <- df[df$typ == "mRNA", ]
-t_df <- df[df$typ == "tRNA", ]
-r_df <- df[df$typ == "rRNA", ]
-```
-
-## Różnice według metryki $SS$
-
-### mRNA
-
-ANOVA
-```{r}
-m_anova <- aov(SS ~ struktura, data = m_df)
-summary(m_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(m_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- m_df %>%
-  ggplot(aes(x = struktura, y = SS)) +
+p <- df %>%
+  ggplot(aes(x = typ, y = SS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_pre_threshold/structures/mRNA_SS_pre_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/SS_box.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+kruskal.test(SS ~ struktura, data = df)
+dunn.test(df$SS, df$struktura, method = "bonferroni")
+
+kruskal.test(SS ~ typ, data = df)
+dunn.test(df$SS, df$typ, method = "bonferroni")
 ```
 
-### tRNA
-
-ANOVA
 ```{r}
-t_anova <- aov(SS ~ struktura, data = t_df)
-summary(t_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(t_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- t_df %>%
-  ggplot(aes(x = struktura, y = SS)) +
+p <- df %>%
+  ggplot(aes(x = typ, y = CS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_pre_threshold/structures/tRNA_SS_pre_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/CS_box.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+kruskal.test(CS ~ struktura, data = df)
+dunn.test(df$CS, df$struktura, method = "bonferroni")
+
+kruskal.test(CS ~ typ, data = df)
+dunn.test(df$CS, df$typ, method = "bonferroni")
 ```
 
-### rRNA
+Uwzględnione jedynie sekwencje wysoce konserwatywne
 
-ANOVA
 ```{r}
-r_anova <- aov(SS ~ struktura, data = r_df)
-summary(r_anova)
+quart3k <- quantile(df$K, names = FALSE)[4]
+df_filtered <- df %>%
+  filter(K > quart3k) %>%
+  filter(IA > median(IA))
+length(unique(rownames(df_filtered)))
 ```
 
-Test HSD Tukeya
 ```{r}
-TukeyHSD(r_anova)
+df_filtered %>%
+  select(SS, CS) %>%
+  summary(digits = 2)
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+
+sd(df_filtered$SS) %>% round(2)
+sd(df_filtered$CS) %>% round(3)
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
 ```
 
-Wykres pudełkowy
 ```{r}
-plot <- r_df %>%
-  ggplot(aes(x = struktura, y = SS)) +
+p <- df_filtered %>%
+  ggplot(aes(x = typ, y = SS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
+  ylab("SS") +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_pre_threshold/structures/rRNA_SS_pre_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/SS_box_filtered.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+dunn.test(df_filtered$SS, df_filtered$struktura, method = "bonferroni")
+
+dunn.test(df_filtered$SS, df_filtered$typ, method = "bonferroni")
 ```
 
-
-## Różnice według metryki $CS$
-
-### mRNA
-
-ANOVA
 ```{r}
-m_anova <- aov(CS ~ struktura, data = m_df)
-summary(m_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(m_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- m_df %>%
-  ggplot(aes(x = struktura, y = CS)) +
+p <- df_filtered %>%
+  ggplot(aes(x = typ, y = CS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
+  ylab("CS") +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_pre_threshold/structures/mRNA_CS_pre_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/CS_box_filtered.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+
+dunn.test(df_filtered$CS, df_filtered$struktura, method = "bonferroni")
+
+dunn.test(df_filtered$CS, df_filtered$typ, method = "bonferroni")
 ```
 
-### tRNA
+Uwzględnione jedynie sekwencje wysoce zmienne
 
-ANOVA
 ```{r}
-t_anova <- aov(CS ~ struktura, data = t_df)
-summary(t_anova)
+quart1k <- quantile(df$K, names = FALSE)[2]
+df_filtered2 <- df %>%
+  filter(K < quart1k) %>%
+  filter(IA > median(IA))
+length(unique(rownames(df_filtered2)))
 ```
 
-Test HSD Tukeya
 ```{r}
-TukeyHSD(t_anova)
+df_filtered2 %>%
+  select(SS, CS) %>%
+  summary(digits = 2)
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+
+sd(df_filtered2$SS) %>% round(2)
+sd(df_filtered2$CS) %>% round(3)
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
 ```
 
-Wykres pudełkowy
 ```{r}
-plot <- t_df %>%
-  ggplot(aes(x = struktura, y = CS)) +
+p <- df_filtered2 %>%
+  ggplot(aes(x = typ, y = CS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
+  ylab("CS") +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_pre_threshold/structures/tRNA_CS_pre_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/CS_box_filtered2.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+
+dunn.test(df_filtered2$CS, df_filtered2$struktura, method = "bonferroni")
+
+dunn.test(df_filtered2$CS, df_filtered2$typ, method = "bonferroni")
 ```
 
-### rRNA
-
-ANOVA
 ```{r}
-r_anova <- aov(CS ~ struktura, data = r_df)
-summary(r_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(r_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- r_df %>%
-  ggplot(aes(x = struktura, y = CS)) +
+p <- df_filtered2 %>%
+  ggplot(aes(x = typ, y = SS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
+  ylab("SS") +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_pre_threshold/structures/rRNA_CS_pre_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/SS_box_filtered2.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+dunn.test(df_filtered2$SS, df_filtered2$struktura, method = "bonferroni")
+
+dunn.test(df_filtered2$SS, df_filtered2$typ, method = "bonferroni")
 ```
 
-# Badanie różnic między strukturami **po** zastosowaniu odcięcia
-
-## Wczytanie danych do analizy różnic po odcięciu
+# Badanie różnic (po wyeliminowaniu ekstremalnych wartości $SS$ i $CS$)
 
 ```{r}
-df <- read.csv("../output_yeast_post_threshold/structures/combined.csv")
-colnames(df) <- c("gen", "struktura", "SS", "typ", "IA", "CS")
-replacements <- c("VS" = "in silico", "VC" = "consensus", "VG" = "guided")
-df$struktura <- str_replace_all(df$struktura, replacements)
-df$gen <- toupper(df$gen)
-head(df)
-str(df)
+# filtrowanie
+df <- df %>% filter(SS < 10, CS > 0)
 ```
 
 ```{r}
-m_df <- df[df$typ == "mRNA", ]
-t_df <- df[df$typ == "tRNA", ]
-r_df <- df[df$typ == "rRNA", ]
+df %>%
+  select(SS, CS) %>%
+  summary(digits = 2)
+df %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+
+sd(df$SS) %>% round(2)
+sd(df$CS) %>% round(3)
+df %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
+df %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
 ```
 
-## Różnice według metryki $SS$
-
-### mRNA
-
-ANOVA
 ```{r}
-m_anova <- aov(SS ~ struktura, data = m_df)
-summary(m_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(m_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- m_df %>%
-  ggplot(aes(x = struktura, y = SS)) +
+p <- df %>%
+  ggplot(aes(x = typ, y = SS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_post_threshold/structures/mRNA_SS_post_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/SS_box_noextreme.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+kruskal.test(SS ~ struktura, data = df)
+dunn.test(df$SS, df$struktura, method = "bonferroni")
+
+kruskal.test(SS ~ typ, data = df)
+dunn.test(df$SS, df$typ, method = "bonferroni")
 ```
 
-### rRNA
-
-ANOVA
 ```{r}
-r_anova <- aov(SS ~ struktura, data = r_df)
-summary(r_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(r_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- r_df %>%
-  ggplot(aes(x = struktura, y = SS)) +
+p <- df %>%
+  ggplot(aes(x = typ, y = CS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_post_threshold/structures/rRNA_SS_post_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/CS_box_noextreme.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+kruskal.test(CS ~ struktura, data = df)
+dunn.test(df$CS, df$struktura, method = "bonferroni")
+
+kruskal.test(CS ~ typ, data = df)
+dunn.test(df$CS, df$typ, method = "bonferroni")
 ```
 
+Uwzględnione jedynie sekwencje wysoce konserwatywne
 
-## Różnice według metryki $CS$
-
-### mRNA
-
-ANOVA
 ```{r}
-m_anova <- aov(CS ~ struktura, data = m_df)
-summary(m_anova)
+quart3k <- quantile(df$K, names = FALSE)[4]
+df_filtered <- df %>%
+  filter(K > quart3k) %>%
+  filter(IA > median(IA))
+length(unique(rownames(df_filtered)))
 ```
 
-Test HSD Tukeya
 ```{r}
-TukeyHSD(m_anova)
+df_filtered %>%
+  select(SS, CS) %>%
+  summary(digits = 2)
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+
+sd(df_filtered$SS) %>% round(2)
+sd(df_filtered$CS) %>% round(3)
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
 ```
 
-Wykres pudełkowy
 ```{r}
-plot <- m_df %>%
-  ggplot(aes(x = struktura, y = CS)) +
+p <- df_filtered %>%
+  ggplot(aes(x = typ, y = SS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
+  ylab("SS") +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
-
-plot
-```
-
-```{r}
+p
 ggsave(
-  "../output_yeast_post_threshold/structures/mRNA_CS_post_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
+  "fig/SS_box_filtered_noextreme.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
 )
+
+dunn.test(df_filtered$SS, df_filtered$struktura, method = "bonferroni")
+
+dunn.test(df_filtered$SS, df_filtered$typ, method = "bonferroni")
 ```
 
-### rRNA
-
-ANOVA
 ```{r}
-r_anova <- aov(CS ~ struktura, data = r_df)
-summary(r_anova)
-```
-
-Test HSD Tukeya
-```{r}
-TukeyHSD(r_anova)
-```
-
-Wykres pudełkowy
-```{r}
-plot <- r_df %>%
-  ggplot(aes(x = struktura, y = CS)) +
+p <- df_filtered %>%
+  ggplot(aes(x = typ, y = CS, fill = struktura)) +
   geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
-  geom_dotplot(
-    aes(fill = gen),
-    binaxis = "y", stackdir = "center", dotsize = 0.5,
-    alpha = 0.8, col = NA
-  ) +
   theme_classic() +
+  ylab("CS") +
   theme(
-    legend.text = element_text(size = 18),
+    legend.text = element_text(size = 18, face = "italic"),
     legend.title = element_text(size = 24),
     axis.title.x = element_blank(),
     axis.title.y = element_text(size = 24, face = "italic"),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
     panel.grid = element_blank(),
-    axis.text.x = element_text(size = 24, face = "italic"),
+    axis.text.x = element_text(size = 24),
     axis.text.y = element_text(size = 24),
   )
+p
+ggsave(
+  "fig/CS_box_filtered_noextreme.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
+)
 
-plot
+
+dunn.test(df_filtered$CS, df_filtered$struktura, method = "bonferroni")
+
+dunn.test(df_filtered$CS, df_filtered$typ, method = "bonferroni")
+```
+
+Uwzględnione jedynie sekwencje wysoce zmienne
+
+```{r}
+quart1k <- quantile(df$K, names = FALSE)[2]
+df_filtered2 <- df %>%
+  filter(K < quart1k) %>%
+  filter(IA > median(IA))
+length(unique(rownames(df_filtered2)))
 ```
 
 ```{r}
-ggsave(
-  "../output_yeast_post_threshold/structures/rRNA_CS_post_boxplot.png",
-  plot = plot,
-  width = 10, height = 10, dpi = 300
-)
+df_filtered2 %>%
+  select(SS, CS) %>%
+  summary(digits = 2)
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$SS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(summary(.$CS, digits = 2))) %>%
+  select(minimum, median, mean, maximum)
+
+sd(df_filtered2$SS) %>% round(2)
+sd(df_filtered2$CS) %>% round(3)
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered2 %>%
+  group_by(typ) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$SS) %>% round(2)))
+df_filtered2 %>%
+  group_by(struktura) %>%
+  do(tidy(sd(.$CS) %>% round(3)))
 ```
 
+```{r}
+p <- df_filtered2 %>%
+  ggplot(aes(x = typ, y = CS, fill = struktura)) +
+  geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
+  theme_classic() +
+  ylab("CS") +
+  theme(
+    legend.text = element_text(size = 18, face = "italic"),
+    legend.title = element_text(size = 24),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 24, face = "italic"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24),
+  )
+p
+ggsave(
+  "fig/CS_box_filtered2_noextreme.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
+)
+
+
+dunn.test(df_filtered2$CS, df_filtered2$struktura, method = "bonferroni")
+
+dunn.test(df_filtered2$CS, df_filtered2$typ, method = "bonferroni")
+```
+
+```{r}
+p <- df_filtered2 %>%
+  ggplot(aes(x = typ, y = SS, fill = struktura)) +
+  geom_boxplot(staplewidth = 0.1, lwd = 1, outliers = FALSE) +
+  theme_classic() +
+  ylab("SS") +
+  theme(
+    legend.text = element_text(size = 18, face = "italic"),
+    legend.title = element_text(size = 24),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 24, face = "italic"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(size = 24),
+    axis.text.y = element_text(size = 24),
+  )
+p
+ggsave(
+  "fig/SS_box_filtered2_noextreme.png",
+  plot = p, width = 10,
+  height = 10, dpi = 300
+)
+
+dunn.test(df_filtered2$SS, df_filtered2$struktura, method = "bonferroni")
+
+dunn.test(df_filtered2$SS, df_filtered2$typ, method = "bonferroni")
+```
